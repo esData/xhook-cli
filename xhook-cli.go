@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -53,9 +54,9 @@ type Workflow struct {
 	Summary     string
 	Publish     string
 	Tags        []string
-	Parameters  map[string]json.RawMessage
-	Steps       map[string]json.RawMessage
-	Trigger     map[string]json.RawMessage
+	Parameters  json.RawMessage
+	Steps       json.RawMessage
+	Trigger     json.RawMessage
 	Invokes     []string
 	Description string
 	UpdatedAt   time.Time
@@ -66,6 +67,39 @@ type Workflow_run struct {
 	Message string
 	// Result  map[string][]map[string]string `json:"result,omitempty"`
 	Result map[string]json.RawMessage `json:"result,omitempty"`
+}
+
+type Workflow_run_logs struct {
+	Run_id     string
+	UpdatedAt  time.Time
+	Duration   int
+	Status     string
+	Outputs    string
+	Parameters map[string]json.RawMessage `json:"parameters,omitempty"`
+	Results    map[string]json.RawMessage `json:"results,omitempty"`
+	Message    []string
+}
+
+type Payload struct {
+	Workflow_name string
+	Email         string
+	Publish       string
+	Tags          []string
+	Parameters    json.RawMessage
+	Description   string
+	UpdatedAt     time.Time
+}
+
+type Payload_detail struct {
+	Run_id        string
+	Workflow_name string
+	Payload_name  string
+	Payload_type  string
+	Payload       string
+	Payload_md5   string
+	Email         string
+	Publish       string
+	UpdatedAt     time.Time
 }
 
 var (
@@ -87,11 +121,16 @@ var (
 	workflow            Workflow
 	workflows           []Workflow
 	workflow_run        Workflow_run
+	workflow_run_logs   []Workflow_run_logs
 	user_options        User_options
 	uri                 = "https://xhook-api.esdata.io:8443"
 	exitCode            = 0
 	json_format         = false
 	file_output         = ""
+	workflow_run_id     = ""
+	xrp_spec_run        = false
+	payloads            []Payload
+	payload_details     []Payload_detail
 )
 
 func connect(clientId string, uri *url.URL) mqtt.Client {
@@ -369,22 +408,6 @@ func access_info_do(cCtx *cli.Context) error {
 	return nil
 }
 
-func json_print_array_tables(hdr []string, class interface{}) {
-	if jsonData, ok := class.([]Workflow); ok {
-		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader(hdr)
-		for j := 0; j < len(jsonData); j++ {
-			table.Append([]string{color.BlueString(jsonData[j].Name),
-				jsonData[j].Summary,
-				jsonData[j].Publish,
-				strings.Join(jsonData[j].Tags, ",")})
-		}
-		table.SetFooter([]string{fmt.Sprint(len(jsonData)), "", "", " "})
-		table.SetAutoMergeCells(true)
-		table.Render()
-	}
-}
-
 func createKeyValuePairs(m map[string]json.RawMessage) string {
 	b := new(bytes.Buffer)
 	for key, value := range m {
@@ -416,12 +439,56 @@ func structToMap(obj interface{}) map[string]interface{} {
 	return result
 }
 
+func json_print_array_tables(hdr []string, class interface{}) {
+	if jsonData, ok := class.([]Workflow); ok {
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader(hdr)
+		for j := 0; j < len(jsonData); j++ {
+			table.Append([]string{color.BlueString(jsonData[j].Name),
+				jsonData[j].Summary,
+				jsonData[j].Publish,
+				strings.Join(jsonData[j].Tags, ",")})
+		}
+		table.SetFooter([]string{fmt.Sprint(len(jsonData)), "", "", " "})
+		table.SetAutoMergeCells(true)
+		table.Render()
+	} else if jsonData, ok := class.([]Payload); ok {
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader(hdr)
+		for j := 0; j < len(jsonData); j++ {
+			jsonDataParams, _ := json.Marshal(&jsonData[j].Parameters)
+			re := regexp.MustCompile(`,"`)
+			table.Append([]string{color.BlueString(jsonData[j].Workflow_name),
+				jsonData[j].UpdatedAt.String(),
+				re.ReplaceAllString(string(jsonDataParams), ",\n\""),
+			})
+		}
+		table.SetFooter([]string{fmt.Sprint(len(jsonData)), "", " "})
+		table.SetAutoMergeCells(true)
+		table.SetAutoWrapText(true)
+		table.Render()
+	} else if jsonData, ok := class.([]Payload_detail); ok {
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader(hdr)
+		for j := 0; j < len(jsonData); j++ {
+			table.Append([]string{color.BlueString(jsonData[j].Run_id),
+				jsonData[j].Workflow_name,
+				jsonData[j].Payload_name,
+				jsonData[j].Payload_type,
+			})
+		}
+		table.SetFooter([]string{fmt.Sprint(len(jsonData)), "", "", " "})
+		table.SetAutoMergeCells(true)
+		table.SetAutoWrapText(true)
+		table.Render()
+	}
+}
+
 func json_print_tables(class interface{}) {
 	table := tablewriter.NewWriter(os.Stdout)
 	values := reflect.ValueOf(class)
 	types := values.Type()
 	for i := 0; i < values.NumField(); i++ {
-		// fmt.Println(types.Field(i).Type, values.Field(i))
 		switch {
 		case types.Field(i).Type == reflect.TypeOf(int(0)): // int
 			table.Append([]string{color.BlueString(types.Field(i).Name), fmt.Sprintf("%s", values.Field(i))})
@@ -431,6 +498,11 @@ func json_print_tables(class interface{}) {
 			table.Append([]string{color.BlueString(types.Field(i).Name), fmt.Sprintf("%s", values.Field(i))})
 		case types.Field(i).Type.Kind() == reflect.Map:
 			table.Append([]string{color.BlueString(types.Field(i).Name), fmt.Sprintf("%s", values.Field(i))})
+		case types.Field(i).Type == reflect.TypeOf(json.RawMessage{}):
+			jsonFldData, _ := json.Marshal(json.RawMessage(values.Field(i).Bytes()))
+			re := regexp.MustCompile(`,"`)
+			table.Append([]string{color.BlueString(types.Field(i).Name),
+				re.ReplaceAllString(string(jsonFldData), ",\n\"")})
 		}
 	}
 	table.Render()
@@ -659,6 +731,227 @@ func workflow_run_do(cCtx *cli.Context) error {
 	return nil
 }
 
+func workflow_run_log(cCtx *cli.Context) error {
+	setParams()
+	cCtx.Command.FullName()
+	cCtx.Command.HasName("workflow")
+	cCtx.Command.Names()
+	cCtx.Command.VisibleFlags()
+
+	// AUTH
+	if len(token) == 0 {
+		slog.Error("[AUTH] no access")
+		exitCode = 401
+		return nil
+	}
+
+	if workflow_run_id != "" {
+		slog.Info("[WORKFLOW] Run id" + workflow_run_id)
+		method := "GET"
+		client := &http.Client{}
+		req, err := http.NewRequest(method, uri+"/workflows/run/"+workflow_run_id, nil)
+		if err != nil {
+			slog.Error(err.Error())
+			return err
+		}
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("Authorization", "Bearer "+token)
+		res, err := client.Do(req)
+		if err != nil {
+			slog.Error(err.Error())
+			return err
+		}
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			slog.Error(err.Error())
+		} else {
+			err := json.Unmarshal(body, &workflow_run_logs)
+			if err != nil {
+				slog.Error("[WORKFLOW] " + err.Error())
+				return nil
+			}
+			if res.StatusCode == 200 {
+				table := tablewriter.NewWriter(os.Stdout)
+				for k := range workflow_run_logs {
+					if workflow_run_logs[k].Status == "error" {
+						table.Append([]string{"Status", color.RedString(workflow_run_logs[k].Status)})
+					} else {
+						table.Append([]string{"Status", color.BlueString(workflow_run_logs[k].Status)})
+					}
+					table.Append([]string{"Date", workflow_run_logs[k].UpdatedAt.String()})
+					table.Append([]string{"Duration(s)", strconv.Itoa(workflow_run_logs[k].Duration)})
+					table.Append([]string{"Message", strings.Join(workflow_run_logs[k].Message, ",")})
+					table.Append([]string{"Outputs", workflow_run_logs[k].Outputs})
+				}
+				table.Render()
+				slog.Debug("[WORKFLOW] " + string(body))
+				if len(file_output) > 0 {
+					write_file(file_output, string(body))
+				} else if json_format {
+					j, _ := json.MarshalIndent(string(body), "", "  ")
+					fmt.Println(string(j))
+				}
+			} else if res.StatusCode == 401 {
+				slog.Error(color.RedString("[WORKFLOW] ") + "Unauthorized")
+				exitCode = 1
+			}
+		}
+	} else if workflow_name != "" {
+		slog.Info("[WORKFLOW] NAME: " + color.BlueString(workflow_name))
+
+		method := "GET"
+		client := &http.Client{}
+		req, err := http.NewRequest(method, uri+"/workflows/run/"+workflow_name, nil)
+		if err != nil {
+			slog.Error(err.Error())
+			return err
+		}
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("Authorization", "Bearer "+token)
+
+		res, err := client.Do(req)
+		if err != nil {
+			slog.Error(err.Error())
+			return err
+		}
+		defer res.Body.Close()
+
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			slog.Error(err.Error())
+		} else {
+			err := json.Unmarshal(body, &workflow_run_logs)
+			if err != nil {
+				slog.Error("[WORKFLOW] " + err.Error())
+				return nil
+			}
+			if res.StatusCode == 200 {
+				// TODO: use common print_array_tables
+				// Workflow result
+				// var headerKey []string
+				// fmt.Println(color.RedString("<<RESULTS>>"))
+				// json_print_array_tables([]string{"Run ID", "Date", "Duration", "Status"}, workflow_run_logs)
+				table := tablewriter.NewWriter(os.Stdout)
+				table.Append([]string{"Run ID", "Date", "Duration", "Status"})
+				for k := range workflow_run_logs {
+					if workflow_run_logs[k].Status == "error" {
+						table.Append([]string{color.RedString(workflow_run_logs[k].Run_id),
+							workflow_run_logs[k].UpdatedAt.String(),
+							strconv.Itoa(workflow_run_logs[k].Duration),
+							workflow_run_logs[k].Status})
+					} else {
+						table.Append([]string{color.BlueString(workflow_run_logs[k].Run_id),
+							workflow_run_logs[k].UpdatedAt.String(),
+							strconv.Itoa(workflow_run_logs[k].Duration),
+							workflow_run_logs[k].Status})
+					}
+				}
+				table.SetFooter([]string{fmt.Sprint(len(workflow_run_logs)), "", "", " "})
+				table.Render()
+				slog.Debug("[WORKFLOW] " + string(body))
+			} else if res.StatusCode == 401 {
+				slog.Error(color.RedString("[WORKFLOW] ") + "Unauthorized")
+				exitCode = 1
+			}
+		}
+	} else {
+		slog.Error(color.RedString("[WORKFLOW] name not provided"))
+		exitCode = 1
+	}
+	return nil
+}
+
+func payload_list_do(cCtx *cli.Context) error {
+	setParams()
+	cCtx.Command.FullName()
+	cCtx.Command.HasName("payload")
+	cCtx.Command.Names()
+	cCtx.Command.VisibleFlags()
+
+	// AUTH
+	if len(token) == 0 {
+		slog.Error("[AUTH] no access")
+		exitCode = 401
+		return nil
+	}
+
+	// REQ - Payload
+	method := "GET"
+	client := &http.Client{}
+	req, err := http.NewRequest(method, uri+"/payloads/"+workflow_name, nil)
+	if err != nil {
+		slog.Error(err.Error())
+		return err
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Bearer "+token)
+	res, err := client.Do(req)
+	if err != nil {
+		slog.Error(err.Error())
+		return err
+	}
+	defer res.Body.Close()
+
+	// Parse Body
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		slog.Error(err.Error())
+	} else {
+		if res.StatusCode == 200 {
+			slog.Debug("Body: " + string(body))
+			fmt.Println(color.RedString("<<PAYLOADS>>") + " " + workflow_name)
+			if body[0] == '[' && body[1] != ']' {
+				if len(workflow_name) > 0 {
+					err := json.Unmarshal(body, &payload_details)
+					if err != nil {
+						slog.Error("[PAYLOAD] " + err.Error())
+						slog.Error(color.RedString("[PAYLOAD] not found rc=[" + strconv.Itoa(res.StatusCode) + "]"))
+						return nil
+					}
+				} else {
+					err := json.Unmarshal(body, &payloads)
+					if err != nil {
+						slog.Error("[PAYLOAD] " + err.Error())
+						slog.Error(color.RedString("[PAYLOAD] not found rc=[" + strconv.Itoa(res.StatusCode) + "]"))
+						return nil
+					}
+				}
+				if len(file_output) > 0 {
+					write_file(file_output, string(body))
+				} else if json_format {
+					j, _ := json.MarshalIndent(string(body), "", "  ")
+					fmt.Println(string(j))
+				} else {
+					if len(workflow_name) > 0 {
+						json_print_array_tables([]string{"run_id", "name", "payload_name", "type"}, payload_details)
+					} else {
+						json_print_array_tables([]string{"name", "date", "parameters"}, payloads)
+					}
+				}
+			} else if body[0] == '[' && body[1] == ']' {
+				slog.Error(color.RedString("[PAYLOAD] not found"))
+			} else {
+				err := json.Unmarshal(body, &payloads)
+				fmt.Println(color.RedString("<<PAYLOADS>> " + workflow_name))
+				if err != nil {
+					slog.Error("[PAYLOAD] " + err.Error())
+					slog.Error("[PAYLOAD] not found rc=[" + strconv.Itoa(res.StatusCode) + "]")
+					return nil
+				} else {
+					json_print_tables(payloads)
+				}
+			}
+		} else if res.StatusCode == 401 {
+			slog.Info("[PAYLOAD] Unauthorized")
+			exitCode = 401
+		} else {
+			slog.Error(color.RedString("[PAYLOAD] not found rc=[" + strconv.Itoa(res.StatusCode) + "]"))
+		}
+	}
+	return nil
+}
+
 func buildAppInstance() (appInst *cli.App) {
 	appInst = &cli.App{
 		Name:     "xhook-cli",
@@ -875,12 +1168,75 @@ func buildAppInstance() (appInst *cli.App) {
 								Usage:       "loglevel",
 								Destination: &loglevel,
 							},
+							&cli.BoolFlag{
+								Name:        "xrpspec",
+								Value:       false,
+								Usage:       "XRPSpec test",
+								Destination: &xrp_spec_run,
+							},
 						},
 					},
 					&cli.Command{
-						Name:  "logs",
-						Usage: "Workflow logs",
-						// Action: workflow_logs_do,
+						Name:      "logs",
+						Usage:     "Workflow logs",
+						UsageText: "Workflow logs --name",
+						Action:    workflow_run_log,
+						Flags: []cli.Flag{
+							&cli.StringFlag{
+								Name:        "name",
+								Aliases:     []string{"w"},
+								Usage:       "Workflow name",
+								Destination: &workflow_name,
+							},
+							&cli.StringFlag{
+								Name:        "run_id",
+								Aliases:     []string{"i"},
+								Usage:       "Workflow run id",
+								Destination: &workflow_run_id,
+							},
+							&cli.StringFlag{
+								Name:        "uri",
+								Aliases:     []string{"s"},
+								Value:       "https://xhook-api.esdata.io:8443",
+								Usage:       "uri end-point",
+								Destination: &uri,
+							},
+							&cli.StringFlag{
+								Name:        "loglevel",
+								Aliases:     []string{"l"},
+								Value:       "info",
+								Usage:       "loglevel",
+								Destination: &loglevel,
+							},
+							&cli.BoolFlag{
+								Name:        "json",
+								Value:       false,
+								Usage:       "json format",
+								Destination: &json_format,
+							},
+							&cli.StringFlag{
+								Name:        "output",
+								Aliases:     []string{"o"},
+								Usage:       "Output json format to file",
+								Destination: &file_output,
+							},
+						},
+					},
+				},
+				SkipFlagParsing: false,
+				HideHelp:        false,
+				Hidden:          false,
+			},
+			&cli.Command{
+				Name:        "payload",
+				Usage:       "Payload command",
+				UsageText:   "Payload [command] [options]",
+				Description: "Payload operation",
+				Subcommands: []*cli.Command{
+					&cli.Command{
+						Name:   "list",
+						Usage:  "payload list",
+						Action: payload_list_do,
 						Flags: []cli.Flag{
 							&cli.StringFlag{
 								Name:        "name",
@@ -902,17 +1258,18 @@ func buildAppInstance() (appInst *cli.App) {
 								Usage:       "loglevel",
 								Destination: &loglevel,
 							},
+							&cli.StringFlag{
+								Name:        "output",
+								Aliases:     []string{"o"},
+								Usage:       "Output payload to file",
+								Destination: &file_output,
+							},
 						},
 					},
 				},
 				SkipFlagParsing: false,
 				HideHelp:        false,
 				Hidden:          false,
-				// Action:          access_do,
-				// OnUsageError: func(cCtx *cli.Context, err error, isSubcommand bool) error {
-				//	slog.Error("Invalid flags")
-				//	return err
-				// },
 			},
 		},
 		Flags: []cli.Flag{

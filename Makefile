@@ -1,13 +1,13 @@
 # XHOOK-CLI
 
 BINARY = xhook-cli
-VERSION=0.1.0
+VERSION := $(shell git describe --tags --abbrev=8 --dirty --always --long)
 VET_REPORT = vet.report
 TEST_REPORT = tests.xml
 GOARCH = amd64
-DATE=$(date "+%Y%m%d%H%M%S")
-GOVERSION=$(go version | cut -d" " -f3)
-# VERSION=$(git describe --tags --abbrev=8 --dirty --always --long)
+DATE := $(shell date "+%Y%m%d%H%M%S")
+GOVERSION := $(shell go version | cut -d" " -f3)
+
 
 # Symlink into GOPATH
 GITHUB_USERNAME=cheehuan
@@ -21,7 +21,7 @@ PREFIX=esdata.co/xhook-control/xhook-cli/banner
 #LDFLAGS="$LDFLAGS -X '${PREFIX}.GoVersion=${GOVERSION}'"
 
 # Setup the -ldflags option for go build here, interpolate the variable values
-LDFLAGS = -ldflags "-X ${PREFIX}.Version=${VERSION} -X ${PREFIX}.BuildTime=${DATE} -X ${PREFIX}.GoVersion=${GOVERSION}"
+LDFLAGS = -ldflags "-X '${PREFIX}.Version=${VERSION}' -X '${PREFIX}.BuildTime=${DATE}' -X '${PREFIX}.GoVersion=${GOVERSION}'"
 
 # Build the project
 # go build -o bin/${NAME} -ldflags="${LDFLAGS}" esdata.co/xhook-control/${NAME}
