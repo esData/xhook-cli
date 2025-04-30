@@ -747,7 +747,6 @@ func access_generate_do(cCtx *cli.Context) error {
 		return err
 	}
 	req.Header.Add("Content-Type", "application/json")
-	// req.Header.Add("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjoxLCJlbWFpbCI6Inhob29rX2FkbWluQGVzZGF0YS5jbyIsInJvbGUiOiJBZG1pbiJ9LCJpYXQiOjE2NjQ2MDc3ODksImV4cCI6MTY5NjE0Mzc4OX0.qaOZwxRqdeN6S4gahS6wK9pPYRrB8F024XCEi5jLrdw")
 
 	res, err := client.Do(req)
 	if err != nil {
