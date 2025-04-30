@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2025-04-30 Release 2025.4.2
+
+### Bugfix - 2025.4.2
+
+- Remove commented secret
+
 ## 2025-04-13 Release 2025.4.1
 
 ### Feature - 2025.4.1
