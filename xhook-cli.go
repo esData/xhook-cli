@@ -395,7 +395,6 @@ func buildAppInstance() (appInst *cli.App) {
 							},
 							&cli.BoolFlag{
 								Name:        "json",
-								Value:       false,
 								Usage:       "json format",
 								Destination: &json_format,
 							},
@@ -465,6 +464,11 @@ func buildAppInstance() (appInst *cli.App) {
 								Usage:       "Use selector",
 								Destination: &use_selector,
 							},
+							&cli.BoolFlag{
+								Name:        "json",
+								Usage:       "json format",
+								Destination: &json_format,
+							},
 						},
 					},
 					&cli.Command{
@@ -501,7 +505,6 @@ func buildAppInstance() (appInst *cli.App) {
 							},
 							&cli.BoolFlag{
 								Name:        "json",
-								Value:       false,
 								Usage:       "json format",
 								Destination: &json_format,
 							},
@@ -1128,76 +1131,81 @@ func workflow_run_do(cCtx *cli.Context) error {
 		}
 		if res.StatusCode == 200 {
 			// Workflow result
-			var headerKey []string
-			slog.Info("[WORKFLOW] " + "RUN_ID: " + color.BlueString(workflow_run.Id))
-			fmt.Println(color.RedString("<<RESULTS>>"))
-			for k := range workflow_run.Result {
-				table := tablewriter.NewWriter(os.Stdout)
-				jsonDtlRaw := make(map[string]json.RawMessage)
-				err := json.Unmarshal(workflow_run.Result[k], &jsonDtlRaw)
-				if err != nil { // JSON Array
-					/// slog.Error("[WORKFLOW] " + err.Error())
-					jsonDtl := make([]map[string]string, len(jsonDtlRaw))
-					err = json.Unmarshal(workflow_run.Result[k], &jsonDtl)
-					if err != nil {
-						slog.Error("[WORKFLOW] " + err.Error())
-					} else {
-						// fmt.Println(string(workflow_run.Result[k]))
-						fmt.Println("* " + color.BlueString(k+": "+fmt.Sprint(len(jsonDtl))))
-						if use_selector {
-							items := []list.Item{}
-							for k1 := range jsonDtl {
-								for k2 := range jsonDtl[k1] {
-									if k2 == "mac" {
-										items = append(items, item(jsonDtl[k1][k2]))
-									}
-								}
-							}
-							l := list.New(items, itemDelegate{}, defaultWidth, listHeight)
-							l.Title = "Select an itme for your next actions"
-							l.SetShowStatusBar(false)
-							l.SetFilteringEnabled(false)
-							l.Styles.Title = titleStyle
-							l.Styles.PaginationStyle = paginationStyle
-							l.Styles.HelpStyle = helpStyle
-
-							m := model{list: l}
-							if _, err := tea.NewProgram(m).Run(); err != nil {
-								fmt.Println("Error running program:", err)
-								os.Exit(1)
-							}
+			if json_format {
+				j, _ := json.MarshalIndent(string(body), "", "  ")
+				fmt.Println(string(j))
+			} else {
+				var headerKey []string
+				slog.Info("[WORKFLOW] " + "RUN_ID: " + color.BlueString(workflow_run.Id))
+				fmt.Println(color.RedString("<<RESULTS>>"))
+				for k := range workflow_run.Result {
+					table := tablewriter.NewWriter(os.Stdout)
+					jsonDtlRaw := make(map[string]json.RawMessage)
+					err := json.Unmarshal(workflow_run.Result[k], &jsonDtlRaw)
+					if err != nil { // JSON Array
+						/// slog.Error("[WORKFLOW] " + err.Error())
+						jsonDtl := make([]map[string]string, len(jsonDtlRaw))
+						err = json.Unmarshal(workflow_run.Result[k], &jsonDtl)
+						if err != nil {
+							slog.Error("[WORKFLOW] " + err.Error())
 						} else {
-							// slice.Sort(jsonDtl[:], func(i, j int) bool {}}
-							for k1 := range jsonDtl {
-								var headerDtl []string
-								if len(headerKey) == 0 {
+							// fmt.Println(string(workflow_run.Result[k]))
+							fmt.Println("* " + color.BlueString(k+": "+fmt.Sprint(len(jsonDtl))))
+							if use_selector {
+								items := []list.Item{}
+								for k1 := range jsonDtl {
 									for k2 := range jsonDtl[k1] {
-										if !slices.Contains(headerKey, k2) {
-											headerKey = append(headerKey, k2)
+										if k2 == "mac" {
+											items = append(items, item(jsonDtl[k1][k2]))
 										}
 									}
 								}
-								for _, k2 := range headerKey {
-									headerDtl = append(headerDtl, jsonDtl[k1][k2])
+								l := list.New(items, itemDelegate{}, defaultWidth, listHeight)
+								l.Title = "Select an itme for your next actions"
+								l.SetShowStatusBar(false)
+								l.SetFilteringEnabled(false)
+								l.Styles.Title = titleStyle
+								l.Styles.PaginationStyle = paginationStyle
+								l.Styles.HelpStyle = helpStyle
+
+								m := model{list: l}
+								if _, err := tea.NewProgram(m).Run(); err != nil {
+									fmt.Println("Error running program:", err)
+									os.Exit(1)
 								}
-								table.Append(headerDtl)
-							}
-							if len(headerKey) > 0 {
-								table.SetHeader(headerKey)
-								// fmt.Println("* Count: " + color.BlueString(fmt.Sprint(len(workflow_run.Result[k]))))
-								table.Render()
 							} else {
-								fmt.Println("* No results")
+								// slice.Sort(jsonDtl[:], func(i, j int) bool {}}
+								for k1 := range jsonDtl {
+									var headerDtl []string
+									if len(headerKey) == 0 {
+										for k2 := range jsonDtl[k1] {
+											if !slices.Contains(headerKey, k2) {
+												headerKey = append(headerKey, k2)
+											}
+										}
+									}
+									for _, k2 := range headerKey {
+										headerDtl = append(headerDtl, jsonDtl[k1][k2])
+									}
+									table.Append(headerDtl)
+								}
+								if len(headerKey) > 0 {
+									table.SetHeader(headerKey)
+									// fmt.Println("* Count: " + color.BlueString(fmt.Sprint(len(workflow_run.Result[k]))))
+									table.Render()
+								} else {
+									fmt.Println("* No results")
+								}
 							}
 						}
+					} else { // raw data
+						fmt.Println("* " + color.BlueString(k+": "+fmt.Sprint(len(jsonDtlRaw))))
+						for jsonFld, _ := range jsonDtlRaw {
+							table.Append([]string{color.BlueString(jsonFld), string(jsonDtlRaw[jsonFld])})
+						}
+						table.SetHeader(headerKey)
+						table.Render()
 					}
-				} else { // raw data
-					fmt.Println("* " + color.BlueString(k+": "+fmt.Sprint(len(jsonDtlRaw))))
-					for jsonFld, _ := range jsonDtlRaw {
-						table.Append([]string{color.BlueString(jsonFld), string(jsonDtlRaw[jsonFld])})
-					}
-					table.SetHeader(headerKey)
-					table.Render()
 				}
 			}
 			slog.Debug("[WORKFLOW] " + string(body))
