@@ -456,7 +456,6 @@ func buildAppInstance() (appInst *cli.App) {
 							},
 							&cli.BoolFlag{
 								Name:        "xrpspec",
-								Value:       false,
 								Usage:       "XRPSpec test",
 								Destination: &xrp_spec_run,
 							},
@@ -1083,8 +1082,12 @@ func workflow_run_do(cCtx *cli.Context) error {
 	method := "POST"
 	client := &http.Client{}
 	url_debug := ""
+	xrp_spec_run_enabled := ""
 	if loglevel == "debug" {
 		url_debug = "?loglevel=debug"
+	}
+	if xrp_spec_run {
+		xrp_spec_run_enabled = "/xspec"
 	}
 
 	var http_payload = []byte(`{"parameters":{` + workflow_parameters + `}}`)
@@ -1095,7 +1098,7 @@ func workflow_run_do(cCtx *cli.Context) error {
 		http_payload, _ = os.ReadFile(workflow_file)
 	}
 	slog.Debug("[WORKFLOW]", "payload", http_payload)
-	req, err := http.NewRequest(method, uri+"/workflows/run/"+workflow_name+url_debug, bytes.NewBuffer(http_payload))
+	req, err := http.NewRequest(method, uri+"/workflows/run/"+workflow_name+xrp_spec_run_enabled+url_debug, bytes.NewBuffer(http_payload))
 	if err != nil {
 		slog.Error(err.Error())
 		return err
@@ -1167,10 +1170,14 @@ func workflow_run_do(cCtx *cli.Context) error {
 							// slice.Sort(jsonDtl[:], func(i, j int) bool {}}
 							for k1 := range jsonDtl {
 								var headerDtl []string
-								for k2 := range jsonDtl[k1] {
-									if !slices.Contains(headerKey, k2) {
-										headerKey = append(headerKey, k2)
+								if len(headerKey) == 0 {
+									for k2 := range jsonDtl[k1] {
+										if !slices.Contains(headerKey, k2) {
+											headerKey = append(headerKey, k2)
+										}
 									}
+								}
+								for _, k2 := range headerKey {
 									headerDtl = append(headerDtl, jsonDtl[k1][k2])
 								}
 								table.Append(headerDtl)
