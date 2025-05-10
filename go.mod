@@ -23,6 +23,7 @@ require (
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
+	github.com/briandowns/spinner v1.23.2
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.4 // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect

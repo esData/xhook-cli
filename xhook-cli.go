@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"esdata.co/xhook-control/xhook-cli/banner"
+	"github.com/briandowns/spinner"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -996,6 +997,9 @@ func workflow_list_do(cCtx *cli.Context) error {
 		return nil
 	}
 
+	g := spinner.New(spinner.CharSets[9], 100*time.Millisecond)
+	g.Start()
+	g.Prefix = "Getting workflow list..."
 	// REQ - workflows
 	method := "GET"
 	client := &http.Client{}
@@ -1012,6 +1016,7 @@ func workflow_list_do(cCtx *cli.Context) error {
 		return err
 	}
 	defer res.Body.Close()
+	g.Stop()
 
 	// Parse Body
 	body, err := io.ReadAll(res.Body)
@@ -1100,6 +1105,9 @@ func workflow_run_do(cCtx *cli.Context) error {
 	if workflow_file != "" {
 		http_payload, _ = os.ReadFile(workflow_file)
 	}
+	g := spinner.New(spinner.CharSets[9], 100*time.Millisecond)
+	g.Start()
+	g.Prefix = "Invoke workflow..."
 	slog.Debug("[WORKFLOW]", "payload", http_payload)
 	req, err := http.NewRequest(method, uri+"/workflows/run/"+workflow_name+xrp_spec_run_enabled+url_debug, bytes.NewBuffer(http_payload))
 	if err != nil {
@@ -1119,6 +1127,7 @@ func workflow_run_do(cCtx *cli.Context) error {
 		return err
 	}
 	defer res.Body.Close()
+	g.Stop()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
