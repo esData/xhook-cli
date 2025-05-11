@@ -33,6 +33,7 @@ import (
 	"gitlab.com/david_mbuvi/go_asterisks"
 )
 
+const Uri = "https://xhook-api.esdata.io:8443"
 const Org = "unset_org"
 const Proj = "undef_proj"
 const listHeight = 14
@@ -200,7 +201,7 @@ var (
 	workflow_run        Workflow_run
 	workflow_run_logs   []Workflow_run_logs
 	workflow_file       = ""
-	uri                 = "https://xhook-api.esdata.io:8443"
+	uri                 = Uri
 	exitCode            = 0
 	json_format         = false
 	file_output         = ""
@@ -631,7 +632,9 @@ func setParams() {
 	if xhook_uri.String() != "" {
 		uri = xhook_uri.String()
 	}
-	slog.Info("[SYS] uri=[" + uri + "]")
+	if uri != Uri {
+		slog.Info("[SYS] uri=[" + uri + "]")
+	}
 }
 
 func getToken() {
